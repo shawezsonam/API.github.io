@@ -11,11 +11,16 @@ CORS(app)
 # --------------------------
 # 🔹 Zerodha Credentials
 # --------------------------
-API_KEY = "YOUR_API_KEY"
-ACCESS_TOKEN = "YOUR_ACCESS_TOKEN"
+API_KEY = os.getenv("ZERODHA_API_KEY", "YOUR_API_KEY")
+ACCESS_TOKEN = os.getenv("ZERODHA_ACCESS_TOKEN", "YOUR_ACCESS_TOKEN")
 
-kite = KiteConnect(api_key=API_KEY)
-kite.set_access_token(ACCESS_TOKEN)
+kite = None
+try:
+    kite = KiteConnect(api_key=API_KEY)
+    kite.set_access_token(ACCESS_TOKEN)
+    print("✅ Zerodha connection initialized.")
+except Exception as e:
+    print("⚠️ Zerodha init failed:", e)
 
 # --------------------------
 # 🔹 Stock Symbols
@@ -34,20 +39,21 @@ INSTRUMENT_FILE = "instruments_nse.csv"
 
 def load_instruments():
     global token_map
-    if not os.path.exists(INSTRUMENT_FILE):
-        print("📥 Downloading instruments list from Zerodha...")
-        url = "https://api.kite.trade/instruments"
-        resp = requests.get(url)
-        with open(INSTRUMENT_FILE, "wb") as f:
-            f.write(resp.content)
-    # Parse CSV
-    with open(INSTRUMENT_FILE, "r") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            tradingsymbol = row["tradingsymbol"].strip().upper()
-            if row["exchange"] == "NSE":
-                token_map[tradingsymbol] = int(row["instrument_token"])
-    print(f"✅ Loaded {len(token_map)} NSE instruments.")
+    try:
+        if not os.path.exists(INSTRUMENT_FILE):
+            print("📥 Downloading instruments list from Zerodha...")
+            url = "https://api.kite.trade/instruments"
+            resp = requests.get(url, timeout=5)
+            with open(INSTRUMENT_FILE, "wb") as f:
+                f.write(resp.content)
+        with open(INSTRUMENT_FILE, "r") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if row["exchange"] == "NSE":
+                    token_map[row["tradingsymbol"].strip().upper()] = int(row["instrument_token"])
+        print(f"✅ Loaded {len(token_map)} NSE instruments.")
+    except Exception as e:
+        print("⚠️ Instrument load failed:", e)
 
 load_instruments()
 
@@ -59,7 +65,7 @@ def get_stocks():
     result = []
     try:
         qs = ",".join([f"{sym}.NS" for sym in STOCK_SYMBOLS])
-        resp = requests.get(f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={qs}", timeout=2)
+        resp = requests.get(f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={qs}", timeout=3)
         data = resp.json().get("quoteResponse", {}).get("result", [])
         if data:
             for item in data:
@@ -71,8 +77,8 @@ def get_stocks():
                     "volume": f"{int(item.get('regularMarketVolume',0)/1000000)}M"
                 })
             return jsonify(result)
-    except:
-        pass
+    except Exception as e:
+        print("⚠️ Yahoo fetch failed:", e)
 
     for sym in STOCK_SYMBOLS:
         delta = round(random.uniform(-25, 25), 2)
@@ -82,7 +88,7 @@ def get_stocks():
     return jsonify(result)
 
 # --------------------------
-# 📌 NSE Indices (Nifty, BankNifty, Sensex)
+# 📌 NSE Indices
 # --------------------------
 @app.route("/indices")
 def indices():
@@ -94,19 +100,19 @@ def indices():
     result = []
     try:
         qs = ",".join(indices_data.values())
-        resp = requests.get(f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={qs}", timeout=2)
+        resp = requests.get(f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={qs}", timeout=3)
         data = resp.json().get("quoteResponse", {}).get("result", [])
         for item in data:
-            name = item.get("shortName", item.get("symbol"))
-            price = round(item.get("regularMarketPrice", 0), 2)
-            change = round(item.get("regularMarketChangePercent", 0), 2)
-            result.append({"index": name, "price": price, "change": change})
+            result.append({
+                "index": item.get("shortName", item.get("symbol")),
+                "price": round(item.get("regularMarketPrice", 0), 2),
+                "change": round(item.get("regularMarketChangePercent", 0), 2)
+            })
         if result:
             return jsonify(result)
-    except:
-        pass
+    except Exception as e:
+        print("⚠️ Indices fetch failed:", e)
 
-    # fallback simulated data
     for name in indices_data.keys():
         result.append({"index": name, "price": round(random.uniform(30000, 200000), 2), "change": round(random.uniform(-1, 1), 2)})
     return jsonify(result)
@@ -117,14 +123,17 @@ def indices():
 @app.route("/zerodha-quote/<symbol>")
 def zerodha_quote(symbol):
     try:
-        quote = kite.quote(exchange="NSE", tradingsymbol=symbol.upper())
-        data = quote.get("NSE:" + symbol.upper(), {})
-        return jsonify({
-            "symbol": symbol.upper(),
-            "last_price": data.get("last_price"),
-            "ohlc": data.get("ohlc"),
-            "timestamp": datetime.now().isoformat()
-        })
+        if kite:
+            quote = kite.quote([f"NSE:{symbol.upper()}"])
+            data = quote.get(f"NSE:{symbol.upper()}", {})
+            return jsonify({
+                "symbol": symbol.upper(),
+                "last_price": data.get("last_price"),
+                "ohlc": data.get("ohlc"),
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            return jsonify({"status": "error", "message": "Zerodha not initialized"}), 500
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -132,31 +141,27 @@ def zerodha_quote(symbol):
 # 📌 Zerodha WebSocket Streaming
 # --------------------------
 def start_websocket():
-    kws = KiteTicker(API_KEY, ACCESS_TOKEN)
-
-    def on_ticks(ws, ticks):
-        for tick in ticks:
-            token = tick['instrument_token']
-            live_ticks[token] = {
-                "last_price": tick['last_price'],
-                "volume": tick.get('volume', 0),
-                "timestamp": datetime.now().strftime("%H:%M:%S")
-            }
-
-    def on_connect(ws, response):
-        print("✅ Zerodha WebSocket Connected")
-        tokens = []
-        for sym in STOCK_SYMBOLS:
-            token = token_map.get(sym.upper())
-            if token:
-                tokens.append(token)
-        print("🔹 Subscribing tokens:", tokens)
-        ws.subscribe(tokens)
-        ws.set_mode(ws.MODE_LTP, tokens)
-
-    kws.on_ticks = on_ticks
-    kws.on_connect = on_connect
-    kws.connect(threaded=True)
+    try:
+        if not kite:
+            return
+        kws = KiteTicker(API_KEY, ACCESS_TOKEN)
+        def on_ticks(ws, ticks):
+            for tick in ticks:
+                token = tick['instrument_token']
+                live_ticks[token] = {
+                    "last_price": tick['last_price'],
+                    "volume": tick.get('volume', 0),
+                    "timestamp": datetime.now().strftime("%H:%M:%S")
+                }
+        def on_connect(ws, response):
+            tokens = [token_map[sym] for sym in STOCK_SYMBOLS if sym in token_map]
+            ws.subscribe(tokens)
+            ws.set_mode(ws.MODE_LTP, tokens)
+        kws.on_ticks = on_ticks
+        kws.on_connect = on_connect
+        kws.connect(threaded=True)
+    except Exception as e:
+        print("⚠️ WebSocket failed:", e)
 
 threading.Thread(target=start_websocket, daemon=True).start()
 
@@ -165,7 +170,7 @@ def zerodha_stream():
     return jsonify({"live_data": live_ticks})
 
 # --------------------------
-# 📌 Live Market News (Moneycontrol scraping)
+# 📌 Live Market News
 # --------------------------
 @app.route("/news")
 def market_news():
@@ -175,15 +180,12 @@ def market_news():
         soup = BeautifulSoup(resp.text, "html.parser")
         cards = soup.select("div.listing-news a")[:5]
         for a in cards:
-            headline = a.get_text(strip=True)
-            link = a.get("href")
-            result.append({"headline": headline, "url": link})
+            result.append({"headline": a.get_text(strip=True), "url": a.get("href")})
         if result:
             return jsonify({"source": "live", "news": result})
     except Exception as e:
         print("Scraping failed:", e)
 
-    # fallback static headlines
     fallback = [
         {"headline": "Reliance surges on earnings beat", "url": ""},
         {"headline": "TCS Q1 revenue up 12% YoY", "url": ""},
