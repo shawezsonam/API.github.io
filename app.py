@@ -1,12 +1,12 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify
 from flask_cors import CORS
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='', static_folder='static')
 CORS(app)
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return app.send_static_file("index.html")
 
 @app.route("/hello/<name>")
 def hello(name):
