@@ -1,47 +1,4 @@
-# --- Core Web Frameworks ---
 Flask==3.0.0
-gunicorn==21.2.0
-Werkzeug==3.0.3
-Jinja2==3.1.4
-MarkupSafe==2.1.5
-
-# --- Flask Extensions ---
 flask_cors==4.0.0
-Flask-RESTful==0.3.10
-Flask-SQLAlchemy==3.1.1
-
-# --- HTTP Requests & Async Networking ---
 requests==2.32.3
-urllib3==2.2.2
-idna==3.7
-chardet==5.2.0
-httpx==0.27.0
-aiohttp==3.10.2
-
-# --- Environment & Utilities ---
-python-dotenv==1.0.1
-python-dateutil==2.9.0
-pytz==2024.1
-tzdata==2024.1
-pyyaml==6.0.2
-cachetools==5.4.0
-schedule==1.2.2
-
-# --- Data Handling ---
-pandas==2.2.2
-certifi==2024.7.4
-
-# --- Web Scraping ---
-beautifulsoup4==4.12.3
-lxml==5.2.2
-
-# --- Stock Market APIs ---
-kiteconnect==5.0.1
-
-# --- Logging & Monitoring ---
-loguru==0.7.2
-python-json-logger==2.0.7
-
-# --- Optional Modern API Framework ---
-fastapi==0.115.0
-uvicorn==0.30.1
+gunicorn==21.2.0
