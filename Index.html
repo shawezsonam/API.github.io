@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Render API Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 100px;
+            background: #f0f2f5;
+        }
+        h1 {
+            color: #333;
+            font-size: 2.5rem;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1rem;
+            background: #007BFF;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+    <h1 id="msg">Loading...</h1>
+    <button onclick="loadMessage()">Reload Message</button>
+
+    <script>
+        function loadMessage() {
+            fetch("https://api-github-io.onrender.com/hello/Shawez")
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("msg").textContent = data.message;
+            })
+            .catch(err => {
+                document.getElementById("msg").textContent = "Error loading API!";
+                console.error(err);
+            });
+        }
+
+        // Load message on page start
+        loadMessage();
+    </script>
+
+</body>
+</html>
